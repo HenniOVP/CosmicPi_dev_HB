@@ -1,10 +1,13 @@
 import sys, getopt
 
+import threading
+
 sys.path.append('.')
 import RTIMU
 import os.path
 import time
-import math
+import gps
+import copy
 
 class IMU_Reader():
 
@@ -44,55 +47,21 @@ class IMU_Reader():
         print("Recommended Poll Interval: %dmS\n" % self.poll_interval)
         print("IMU init successfully finished!")
 
-        
+    def get_IMU_and_Pressure_data(self, average):
+        if average > 1:
+            raise NotImplementedError("For now no averaging has been implemented! Only the usage of 1 is feasible.")
+        average = 1
 
-
-IMU_SETTINGS_FILE = "IMU_settings"
-
-imu = IMU_Reader(IMU_SETTINGS_FILE)
-
-'''
-# ---------  Set up IMU
-print("Using settings file " + IMU_SETTINGS_FILE + ".ini")
-if not os.path.exists(IMU_SETTINGS_FILE + ".ini"):
-    print("Settings file does not exist, will be created")
-
-s = RTIMU.Settings(IMU_SETTINGS_FILE)
-imu = RTIMU.RTIMU(s)
-pressure = RTIMU.RTPressure(s)
-
-print("IMU Name: " + imu.IMUName())
-print("Pressure Name: " + pressure.pressureName())
-
-if (not imu.IMUInit()):
-    print("IMU Init Failed")
-    sys.exit(1)
-else:
-    print("IMU Init Succeeded");
-
-# this is a good time to set any fusion parameters
-
-imu.setSlerpPower(0.02)
-imu.setGyroEnable(True)
-imu.setAccelEnable(True)
-imu.setCompassEnable(True)
-
-if (not pressure.pressureInit()):
-    print("Pressure sensor Init Failed")
-else:
-    print("Pressure sensor Init Succeeded")
-
-poll_interval = imu.IMUGetPollInterval()
-print("Recommended Poll Interval: %dmS\n" % poll_interval)
-
-# ----- read IMU
-
-while True:
-    if imu.IMURead():
         # gat Data from IMU
-        data = imu.getIMUData()
-        (data["pressureValid"], data["pressure"], data["temperatureValid"],
-         data["temperature"]) = pressure.pressureRead()
+        while self.imu.IMURead() is not True:
+            time.sleep(self.poll_interval * 1.0 / 1000.0)
+        data = self.imu.getIMUData()
+        (data["pressureValid"], data["pressure"], data["temperatureValid"], data["temperature"]) = self.pressure.pressureRead()
+        time.sleep(self.poll_interval * 1.0 / 1000.0)
+
+        return data
+
+    def print_IMU_and_pressure_data(self, data):
         # accel
         if data["accelValid"] == True:
             print("Accel: ", data["accel"])
@@ -122,5 +91,101 @@ while True:
         print("Fused position: ", data["fusionPose"])
 
 
-        time.sleep(poll_interval * 1.0 / 1000.0)
-'''
+class location_provider():
+
+    def __init__(self, provider_name):
+        self.location_data = {
+                        'lon': 0,
+                        'lat': 0,
+                        'alt': 0,
+                        'err_lon_meter': 999,
+                        'err_lat_meter': 999,
+                        'err_alt_meter': 999,
+                        'update_time_string': '1970-01-01T00:00:00.000Z',
+                        'internal_timestamp': time.time()
+                    }
+        self.output_lock = threading.Lock()
+        self.provider_name = provider_name
+
+    def _update_location_data(self, ext_location_data):
+        with self.output_lock:
+            self.location_data = copy.deepcopy(ext_location_data)
+
+    def get_last_location_data(self):
+        with self.output_lock:
+            return copy.deepcopy(self.location_data)
+
+
+class GPS_location_provider(location_provider, threading.Thread):
+    def __init__(self):
+        location_provider.__init__(self, "GPS")
+        threading.Thread.__init__(self)
+
+        # Listen on port 2947 (gpsd) of localhost
+        self.session = gps.gps("localhost", "2947")
+        self.session.stream(gps.WATCH_ENABLE | gps.WATCH_NEWSTYLE)
+
+    def _get_next_GPS_update(self):
+        report = self.session.next()
+        # Wait for a 'TPV' report
+        if report['class'] == 'TPV':
+            # check if the report contains location and time data
+            if ('time' in report) and ('lon' in report):
+                print report.time
+                internal_localion_data = {}
+                internal_localion_data['lon'] = report['lon']
+                internal_localion_data['lat'] = report['lat']
+                internal_localion_data['alt'] = report['alt']
+                internal_localion_data['err_lon_meter'] = report['epx']
+                internal_localion_data['err_lat_meter'] = report['epy']
+                internal_localion_data['err_alt_meter'] = report['epv']
+                internal_localion_data['update_time_string'] = report['time']
+                internal_localion_data['internal_timestamp'] = time.time()
+                # update our loc data
+                self._update_location_data(self, internal_localion_data)
+            else:
+                pass;
+
+    def run(self):
+        while True:
+            connect_error_counter = 0
+            try:
+                self._get_next_GPS_update()
+                connect_error_counter = 0
+                time.sleep(0.02)
+            except KeyError:
+                pass
+            except StopIteration as e:
+                if connect_error_counter < 10:
+                    print("Is GPSD still up? Will retry in a second")
+                    connect_error_counter += 1
+                else:
+                    raise RuntimeError("GPSD has stopped, and too many retries to reconnect were made!")
+
+
+
+
+
+
+IMU_SETTINGS_FILE = "IMU_settings"
+
+# set up the IMU
+imu = IMU_Reader(IMU_SETTINGS_FILE)
+
+# set up and start the GPS
+gps = GPS_location_provider();
+gps.start()
+
+do_test_run = True
+while do_test_run:
+    # print some data regularily
+    time.sleep(0.5)
+    # print the last GPS data
+    gps_data = gps.get_last_location_data()
+    print("--> GPS: ", gps_data)
+    # get imu data
+    IMU_data = imu.get_IMU_and_Pressure_data(1)
+    # print imu data
+    imu.print_IMU_and_pressure_data(IMU_data)
+
+
