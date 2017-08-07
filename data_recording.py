@@ -13,7 +13,7 @@ imu = sensors.IMU_Reader(IMU_SETTINGS_FILE)
 gps = sensors.GPS_location_provider()
 
 
-# def a recieving functino
+# def a recieving function
 def do_something_with_new_detector_data(*args):
     print("Fresh new data now at the detector!")
     print(args)
@@ -21,7 +21,7 @@ def do_something_with_new_detector_data(*args):
     gps_data = gps.get_last_location_data()
     print("--> GPS: ", gps_data)
     # get imu data
-    IMU_data = imu.get_IMU_and_Pressure_data(average=1)
+    IMU_data = imu.get_IMU_and_Pressure_data()
     # print imu data
     imu.print_IMU_and_pressure_data(IMU_data)
 

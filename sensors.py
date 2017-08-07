@@ -3,7 +3,7 @@ import copy
 import time
 import os.path
 import RTIMU
-import gps
+from gpspy3 import gps
 
 
 
@@ -120,7 +120,7 @@ class GPS_location_provider(location_provider, threading.Thread):
         threading.Thread.__init__(self)
 
         # Listen on port 2947 (gpsd) of localhost
-        self.session = gps.gps("localhost", "2947")
+        self.session = gps.GPS("localhost", "2947")
         self.session.stream(gps.WATCH_ENABLE | gps.WATCH_NEWSTYLE)
 
         # start our own thread
@@ -142,7 +142,7 @@ class GPS_location_provider(location_provider, threading.Thread):
                 internal_localion_data['update_time_string'] = report['time']
                 internal_localion_data['_internal_timestamp'] = time.time()
                 # update our loc data
-                self._update_location_data(self, internal_localion_data)
+                self._update_location_data(internal_localion_data)
             else:
                 pass;
 
@@ -156,8 +156,8 @@ class GPS_location_provider(location_provider, threading.Thread):
             except KeyError:
                 pass
             except StopIteration as e:
-                if connect_error_counter < 10:
-                    print("Is GPSD still up? Will retry in a second")
+                if connect_error_counter < 20:
+                    print("Is GPSD still up? Will retry in a bit")
                     connect_error_counter += 1
                 else:
-                    raise RuntimeError("GPSD has stopped, and too many retries to reconnect were made!")
+                    raise RuntimeError("GPSD seems to have stopped, and too many retries to reconnect were made!")
