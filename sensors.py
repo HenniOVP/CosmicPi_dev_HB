@@ -132,7 +132,6 @@ class GPS_location_provider(location_provider, threading.Thread):
         if report['class'] == 'TPV':
             # check if the report contains location and time data
             if ('time' in report) and ('lon' in report):
-                print report.time
                 internal_localion_data = {}
                 internal_localion_data['lon'] = report['lon']
                 internal_localion_data['lat'] = report['lat']
