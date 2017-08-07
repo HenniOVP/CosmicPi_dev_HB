@@ -100,7 +100,7 @@ class location_provider():
                         'err_lat_meter': 999,
                         'err_alt_meter': 999,
                         'update_time_string': '1970-01-01T00:00:00.000Z',
-                        'internal_timestamp': time.time()
+                        '_internal_timestamp': time.time()
                     }
         self.output_lock = threading.Lock()
         self.provider_name = provider_name
@@ -123,6 +123,9 @@ class GPS_location_provider(location_provider, threading.Thread):
         self.session = gps.gps("localhost", "2947")
         self.session.stream(gps.WATCH_ENABLE | gps.WATCH_NEWSTYLE)
 
+        # start our own thread
+        self.start()
+
     def _get_next_GPS_update(self):
         report = self.session.next()
         # Wait for a 'TPV' report
@@ -138,7 +141,7 @@ class GPS_location_provider(location_provider, threading.Thread):
                 internal_localion_data['err_lat_meter'] = report['epy']
                 internal_localion_data['err_alt_meter'] = report['epv']
                 internal_localion_data['update_time_string'] = report['time']
-                internal_localion_data['internal_timestamp'] = time.time()
+                internal_localion_data['_internal_timestamp'] = time.time()
                 # update our loc data
                 self._update_location_data(self, internal_localion_data)
             else:
